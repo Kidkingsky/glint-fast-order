@@ -152,6 +152,15 @@ export default function AdminDashboard() {
             value={search}
             onChange={e => setSearch(e.target.value)}
           />
+          <button
+            className="ad-refresh-btn"
+            onClick={loadOrders}
+            disabled={spinning}
+            title="重新整理訂單"
+          >
+            <span style={{ display: 'inline-block', transition: 'transform 0.6s', transform: spinning ? 'rotate(360deg)' : 'rotate(0deg)' }}>↻</span>
+            &nbsp;{spinning ? '更新中...' : '重新整理'}
+          </button>
         </div>
 
         {/* Table */}

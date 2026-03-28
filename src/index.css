@@ -509,7 +509,7 @@ body {
 }
 
 /* TOOLBAR */
-.ad-toolbar { display: flex; gap: 12px; margin-bottom: 14px; }
+.ad-toolbar { display: flex; align-items: center; gap: 12px; margin-bottom: 14px; }
 .ad-search {
   flex: 1;
   max-width: 340px;
