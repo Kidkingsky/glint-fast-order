@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Glint-Fast AI | 管理後台</title>
+    <script src="https://www.gstatic.com/firebasejs/9.6.10/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.6.10/firebase-firestore-compat.js"></script>
+    <style>
+        body { font-family: sans-serif; background: #f0f2f5; padding: 20px; }
+        .container { max-width: 1000px; margin: auto; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+        table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+        th, td { padding: 12px; border-bottom: 1px solid #ddd; text-align: left; }
+        th { background: #f8f9fa; }
+        .btn { padding: 6px 12px; cursor: pointer; border: none; border-radius: 4px; }
+        .btn-confirm { background: #28a745; color: white; }
+        .status-badge { padding: 4px 8px; border-radius: 12px; font-size: 12px; }
+        .status-pending_payment { background: #eee; }
+        .status-confirming { background: #ffc107; }
+        .status-processing { background: #28a745; color: white; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Glint-Fast AI 管理後台</h1>
+        <input type="text" id="searchInput" placeholder="搜尋姓名或訂單號..." onkeyup="search()">
+        <table id="orderTable">
+            <thead>
+                <tr>
+                    <th>訂單號</th>
+                    <th>客戶</th>
+                    <th>品項</th>
+                    <th>金額</th>
+                    <th>後五碼</th>
+                    <th>狀態</th>
+                    <th>操作</th>
+                </tr>
+            </thead>
+            <tbody id="tableBody">
+                <!-- 訂單資料會動態載入 -->
+            </tbody>
+        </table>
+    </div>
+
+    <script>
+        const firebaseConfig = { projectId: "wd-fa-2a4d7", apiKey: "AIzaSyDD7prLAsXzGk6QaapylDRXF5ef7Oo12Mg" };
+        firebase.initializeApp(firebaseConfig);
+        const db = firebase.firestore();
+
+        async function loadOrders() {
+            const snapshot = await db.collection("orders").orderBy("createdAt", "desc").get();
+            const body = document.getElementById('tableBody');
+            body.innerHTML = "";
+            snapshot.forEach(doc => {
+                const data = doc.data();
+                const tr = document.createElement('tr');
+                tr.innerHTML = `
+                    <td>${data.orderNumber}</td>
+                    <td>${data.customerName}</td>
+                    <td>${data.items}</td>
+                    <td>$${(data.totalAmount || 0).toLocaleString()}</td>
+                    <td>${data.bankLastFive || "---"}</td>
+                    <td><span class="status-badge status-${data.status}">${data.status}</span></td>
+                    <td>
+                        ${data.status === 'confirming' ? `<button class="btn btn-confirm" onclick="updateStatus('${doc.id}', 'processing')">確認入帳</button>` : '---'}
+                    </td>
+                `;
+                body.appendChild(tr);
+            });
+        }
+
+        async function updateStatus(id, newStatus) {
+            if(confirm("確定要將此訂單改為 " + newStatus + " 嗎？")) {
+                await db.collection("orders").doc(id).update({ status: newStatus });
+                loadOrders();
+            }
+        }
+
+        loadOrders();
+    </script>
+</body>
+</html>
