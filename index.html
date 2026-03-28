@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Glint-Fast AI | 訂單查詢與對帳</title>
+    <script src="https://www.gstatic.com/firebasejs/9.6.10/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.6.10/firebase-firestore-compat.js"></script>
+    <style>
+        :root {
+            --primary: #000;
+            --secondary: #666;
+            --accent: #ff4d4d;
+            --success: #28a745;
+            --pending: #ffc107;
+            --bg: #f8f9fa;
+        }
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: var(--bg); margin: 0; padding: 20px; color: var(--primary); }
+        .card { background: #fff; max-width: 500px; margin: 40px auto; padding: 30px; border-radius: 12px; box-shadow: 0 10px 30px rgba(0,0,0,0.05); }
+        .header { text-align: center; margin-bottom: 30px; }
+        .header h1 { font-size: 24px; margin: 0; letter-spacing: 1px; }
+        .header p { color: var(--secondary); font-size: 14px; margin-top: 5px; }
+        .status-badge { display: inline-block; padding: 6px 12px; border-radius: 20px; font-size: 13px; font-weight: bold; margin-bottom: 20px; }
+        .status-pending_payment { background: #eee; color: var(--secondary); }
+        .status-confirming { background: var(--pending); color: #000; }
+        .status-processing { background: var(--success); color: #fff; }
+        .info-row { display: flex; justify-content: space-between; padding: 12px 0; border-bottom: 1px solid #eee; font-size: 15px; }
+        .info-label { color: var(--secondary); }
+        .info-value { font-weight: 500; }
+        .payment-section { margin-top: 30px; padding-top: 20px; border-top: 2px solid #eee; }
+        .input-group { margin-top: 15px; }
+        input { width: 100%; padding: 12px; border: 1px solid #ddd; border-radius: 6px; font-size: 16px; box-sizing: border-box; }
+        button { width: 100%; padding: 14px; background: var(--primary); color: #fff; border: none; border-radius: 6px; font-size: 16px; font-weight: bold; cursor: pointer; margin-top: 15px; transition: 0.3s; }
+        button:disabled { background: #ccc; cursor: not-allowed; }
+        .footer { text-align: center; margin-top: 40px; font-size: 12px; color: var(--secondary); }
+    </style>
+</head>
+<body>
+
+<div class="card" id="app">
+    <div class="header">
+        <h1>GLINT-FAST AI</h1>
+        <p>四驅車訂單追蹤系統</p>
+    </div>
+    
+    <div id="content" style="display:none;">
+        <div id="statusBadge" class="status-badge">載入中...</div>
+        
+        <div class="info-row">
+            <span class="info-label">訂單編號</span>
+            <span class="info-value" id="orderNumber">---</span>
+        </div>
+        <div class="info-row">
+            <span class="info-label">訂購人</span>
+            <span class="info-value" id="customerName">---</span>
+        </div>
+        <div class="info-row">
+            <span class="info-label">品項</span>
+            <span class="info-value" id="items">---</span>
+        </div>
+        <div class="info-row">
+            <span class="info-label">應付總額</span>
+            <span class="info-value" id="totalAmount">---</span>
+        </div>
+
+        <div class="payment-section" id="paymentSection">
+            <label class="info-label">匯款後回報銀行後五碼：</label>
+            <div class="input-group">
+                <input type="number" id="lastFive" placeholder="請輸入 5 位數字" maxlength="5">
+                <button id="submitBtn" onclick="submitPayment()">送出並開始對帳</button>
+            </div>
+            <p id="msg" style="color:var(--success); font-size:13px; display:none; margin-top:10px;">✅ 已成功收到回報，正在為您核對款項！</p>
+        </div>
+    </div>
+    
+    <div id="loading" style="text-align:center; padding: 20px;">
+        🔍 正在搜尋您的訂單...
+    </div>
+</div>
+
+<div class="footer">
+    Powered by Chiyou-AI | Antigravity 🪐🌸
+</div>
+
+<script>
+    // Firebase 配置 (與您的專案 wd-fa-2a4d7 對接)
+    const firebaseConfig = {
+        projectId: "wd-fa-2a4d7",
+        apiKey: "AIzaSyDD7prLAsXzGk6QaapylDRXF5ef7Oo12Mg" 
+    };
+    firebase.initializeApp(firebaseConfig);
+    const db = firebase.firestore();
+
+    const urlParams = new URLSearchParams(window.location.search);
+    const orderId = urlParams.get('orderId');
+
+    async function loadOrder() {
+        if (!orderId) {
+            document.getElementById('loading').innerHTML = "❌ 找不到訂單編號，請確認連結。";
+            return;
+        }
+
+        const docRef = db.collection("orders").doc(orderId);
+        const doc = await docRef.get();
+
+        if (doc.exists) {
+            const data = doc.data();
+            document.getElementById('orderNumber').innerText = data.orderNumber;
+            document.getElementById('customerName').innerText = data.customerName;
+            document.getElementById('items').innerText = data.items;
+            document.getElementById('totalAmount').innerText = "$" + data.totalAmount;
+            
+            updateUI(data);
+            document.getElementById('content').style.display = 'block';
+            document.getElementById('loading').style.display = 'none';
+        } else {
+            document.getElementById('loading').innerHTML = "❌ 訂單編號錯誤或已不存在。";
+        }
+    }
+
+    function updateUI(data) {
+        const badge = document.getElementById('statusBadge');
+        const submitBtn = document.getElementById('submitBtn');
+        const lastFiveInput = document.getElementById('lastFive');
+        const msg = document.getElementById('msg');
+
+        badge.className = "status-badge status-" + data.status;
+        
+        if (data.status === 'pending_payment') {
+            badge.innerText = "🔴 待匯款";
+        } else if (data.status === 'confirming') {
+            badge.innerText = "🟡 確認中";
+            submitBtn.disabled = true;
+            lastFiveInput.disabled = true;
+            lastFiveInput.value = data.bankLastFive;
+            msg.style.display = 'block';
+        } else if (data.status === 'processing') {
+            badge.innerText = "🟢 製作中";
+            submitBtn.disabled = true;
+            lastFiveInput.disabled = true;
+            lastFiveInput.value = data.bankLastFive;
+            document.getElementById('paymentSection').style.display = 'none';
+        }
+    }
+
+    async function submitPayment() {
+        const lastFive = document.getElementById('lastFive').value;
+        if (lastFive.length !== 5) {
+            alert("請輸入正確的 5 位數字後五碼。");
+            return;
+        }
+
+        if (confirm("確定送出嗎？送出後將無法修改。")) {
+            const docRef = db.collection("orders").doc(orderId);
+            await docRef.update({
+                bankLastFive: lastFive,
+                status: 'confirming',
+                lastUpdated: firebase.firestore.FieldValue.serverTimestamp()
+            });
+            location.reload();
+        }
+    }
+
+    loadOrder();
+</script>
+</body>
+</html>
