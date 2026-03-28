@@ -33,11 +33,20 @@ export default function OrderTracking() {
 
   async function loadOrder() {
     setLoading(true)
-    const snap = await getDoc(doc(db, 'orders', orderId))
-    if (snap.exists()) {
-      setOrder(snap.data())
-    } else {
-      setError('找不到此訂單，請確認連結是否正確。')
+    console.log('[OrderTracking] 查詢訂單 orderId:', orderId)
+    try {
+      const snap = await getDoc(doc(db, 'orders', orderId))
+      console.log('[OrderTracking] Firestore 回應 exists:', snap.exists())
+      if (snap.exists()) {
+        console.log('[OrderTracking] 訂單資料:', snap.data())
+        setOrder(snap.data())
+      } else {
+        console.warn('[OrderTracking] 找不到此 orderId:', orderId)
+        setError('找不到此訂單，請確認連結是否正確。')
+      }
+    } catch (err) {
+      console.error('[OrderTracking] Firestore 錯誤:', err.code, err.message)
+      setError(`連線錯誤：${err.message}`)
     }
     setLoading(false)
   }
