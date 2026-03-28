@@ -20,7 +20,8 @@ export default function OrderTracking() {
   const [error, setError]       = useState('')
   const [lastFive, setLastFive] = useState('')
 
-  const orderId = new URLSearchParams(window.location.search).get('orderId')
+  const params = new URLSearchParams(window.location.search)
+  const orderId = params.get('orderId') || params.get('orderid') || params.get('orderID')
 
   useEffect(() => {
     if (!orderId) {
