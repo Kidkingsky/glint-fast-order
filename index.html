@@ -105,10 +105,11 @@
 
         if (doc.exists) {
             const data = doc.data();
+            console.log("Order Data:", data); // 新增這行來偵錯
             document.getElementById('orderNumber').innerText = data.orderNumber;
             document.getElementById('customerName').innerText = data.customerName;
             document.getElementById('items').innerText = data.items;
-            document.getElementById('totalAmount').innerText = "$" + data.totalAmount;
+            document.getElementById('totalAmount').innerText = "$" + (data.totalAmount || 0).toLocaleString();
             
             updateUI(data);
             document.getElementById('content').style.display = 'block';
