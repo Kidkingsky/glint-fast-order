@@ -84,7 +84,7 @@ export default async function handler(req, res) {
   }
 
   try {
-    const response = await fetch(`${BASE}/orders?key=${API_KEY}`, {
+    const response = await fetch(`${BASE}/orders?documentId=${orderNumber}&key=${API_KEY}`, {
       method:  'POST',
       headers: { 'Content-Type': 'application/json' },
       body:    JSON.stringify(firestoreDoc),
