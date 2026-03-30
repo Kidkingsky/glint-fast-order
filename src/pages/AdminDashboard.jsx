@@ -23,6 +23,13 @@ function formatDate(ts) {
   return d.toLocaleDateString('zh-TW', { year: 'numeric', month: '2-digit', day: '2-digit' })
 }
 
+function toDateStr(ts) {
+  if (!ts) return ''
+  const d = ts.toDate ? ts.toDate() : new Date(ts)
+  if (isNaN(d.getTime())) return ''
+  return d.toISOString().slice(0, 10)
+}
+
 /* ── Login Gate ── */
 function LoginPage({ onLogin }) {
   const [user, setUser]   = useState('')
@@ -59,7 +66,7 @@ function LoginPage({ onLogin }) {
 /* ── Dashboard ── */
 export default function AdminDashboard() {
   const [authed, setAuthed]             = useState(false)
-  const [orders, setOrders]             = useState([])
+  const [orders, setOrders]             = useState([])   // current page raw docs
   const [search, setSearch]             = useState('')
   const [loading, setLoading]           = useState(true)
   const [spinning, setSpinning]         = useState(false)
@@ -67,32 +74,30 @@ export default function AdminDashboard() {
   const [dateTo, setDateTo]             = useState('')
   const [statusFilter, setStatusFilter] = useState('all')
 
-  // ── Pagination ───────────────────────────────────────────────────────────
-  const [page, setPage]           = useState(1)
-  const [totalCount, setTotalCount] = useState(0)
-  // cursorsRef[i] = last document snapshot of page i (= start-after cursor for page i+1)
-  // cursorsRef[0] = null  →  page 1 always starts from the beginning
+  // Pagination
+  const [page, setPage]             = useState(1)
+  const [totalCount, setTotalCount] = useState(0)   // total docs matching DATE filter (server)
+  // cursorsRef[i] = last doc snapshot of page i → used as startAfter for page i+1
   const cursorsRef = useRef([null])
 
-  // ── Global stats (all-time, not affected by page filters) ────────────────
-  const [stats, setStats]           = useState({ total: 0, pending: 0, confirming: 0, processing: 0 })
+  // Global stats (all-time, independent of filters)
+  const [stats, setStats]               = useState({ total: 0, pending: 0, confirming: 0, processing: 0 })
   const [totalRevenue, setTotalRevenue] = useState(0)
 
   const totalPages = Math.max(1, Math.ceil(totalCount / PAGE_SIZE))
 
-  // ── Build query constraints from current filter state ────────────────────
-  // NOTE: status + orderBy(createdAt) requires a Firestore composite index.
-  // If you see a "missing index" error, click the link in the Firebase console to create it.
-  function buildConstraints(sf = statusFilter, df = dateFrom, dt = dateTo) {
+  // ── Build server-side query constraints (date filter only — no status) ─────
+  // Status is intentionally filtered CLIENT-SIDE to avoid needing a Firestore
+  // composite index (status + createdAt), which would require manual setup.
+  function buildServerConstraints(df, dt) {
     const c = []
-    if (sf !== 'all') c.push(where('status', '==', sf))
     if (df) c.push(where('createdAt', '>=', new Date(df + 'T00:00:00+08:00')))
     if (dt) c.push(where('createdAt', '<=', new Date(dt + 'T23:59:59.999+08:00')))
     c.push(orderBy('createdAt', 'desc'))
     return c
   }
 
-  // ── Load global stats (independent of page filters) ──────────────────────
+  // ── Load global stats ─────────────────────────────────────────────────────
   const loadStats = useCallback(async () => {
     const col = collection(db, 'orders')
     const [totalSnap, pendingSnap, confirmSnap, processSnap, revSnap] = await Promise.all([
@@ -113,86 +118,96 @@ export default function AdminDashboard() {
     )
   }, [])
 
-  // ── Load one page of orders from Firestore ───────────────────────────────
-  const loadPage = useCallback(async (targetPage, sf, df, dt) => {
+  // ── Load one page from Firestore (date-filtered, ordered by createdAt) ────
+  const loadPage = useCallback(async (targetPage, df, dt) => {
     setSpinning(true)
-    const base = buildConstraints(sf, df, dt)
+    try {
+      const base = buildServerConstraints(df, dt)
 
-    // 1. Count matching documents (for pagination info)
-    const countSnap = await getCountFromServer(query(collection(db, 'orders'), ...base))
-    const count     = countSnap.data().count
-    setTotalCount(count)
+      // Total count (for pagination bar)
+      const countSnap = await getCountFromServer(query(collection(db, 'orders'), ...base))
+      const count     = countSnap.data().count
+      setTotalCount(count)
 
-    // 2. Fetch exactly PAGE_SIZE docs for this page
-    const pageConstraints = [...base]
-    const cursor = cursorsRef.current[targetPage - 1]
-    if (cursor) pageConstraints.push(startAfter(cursor))
-    pageConstraints.push(limit(PAGE_SIZE))
+      // Page query
+      const pageConstraints = [...base]
+      const cursor = cursorsRef.current[targetPage - 1]
+      if (cursor) pageConstraints.push(startAfter(cursor))
+      pageConstraints.push(limit(PAGE_SIZE))
 
-    const snap = await getDocs(query(collection(db, 'orders'), ...pageConstraints))
-    setOrders(snap.docs.map(d => ({ id: d.id, ...d.data() })))
-    setLoading(false)
-    setSpinning(false)
+      const snap = await getDocs(query(collection(db, 'orders'), ...pageConstraints))
+      setOrders(snap.docs.map(d => ({ id: d.id, ...d.data() })))
 
-    // Cache cursor so the NEXT page can start from here
-    if (snap.docs.length > 0) {
-      cursorsRef.current[targetPage] = snap.docs[snap.docs.length - 1]
+      // Cache cursor for next page
+      if (snap.docs.length > 0) {
+        cursorsRef.current[targetPage] = snap.docs[snap.docs.length - 1]
+      }
+    } catch (err) {
+      console.error('[loadPage]', err)
+    } finally {
+      setLoading(false)
+      setSpinning(false)
     }
-  }, []) // no deps — all filter values are passed as arguments
+  }, [])
 
-  // ── Reset pagination and reload when filters change ───────────────────────
+  // ── Reset pagination and reload when date filter changes ──────────────────
   useEffect(() => {
     if (!authed) return
     cursorsRef.current = [null]
     setPage(1)
     loadStats()
-    loadPage(1, statusFilter, dateFrom, dateTo)
-  }, [authed, statusFilter, dateFrom, dateTo, loadStats, loadPage])
+    loadPage(1, dateFrom, dateTo)
+  }, [authed, dateFrom, dateTo, loadStats, loadPage])
 
-  // ── Load a new page when page number changes (but NOT on filter change,
-  //    since filter change already resets to page 1 above) ──────────────────
-  const prevPageRef = useRef(1)
+  // ── Load new page when page number changes ────────────────────────────────
+  const isFirstRender = useRef(true)
   useEffect(() => {
-    if (!authed || page === prevPageRef.current) return
-    prevPageRef.current = page
-    loadPage(page, statusFilter, dateFrom, dateTo)
-  }, [page]) // intentionally minimal — filter changes are handled above
+    if (!authed) return
+    if (isFirstRender.current) { isFirstRender.current = false; return }
+    loadPage(page, dateFrom, dateTo)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [page])
 
-  // ── Actions ──────────────────────────────────────────────────────────────
+  // ── Actions ───────────────────────────────────────────────────────────────
   async function confirmOrder(id) {
     if (!confirm('確定要確認此筆入帳嗎？')) return
     await updateDoc(doc(db, 'orders', id), { status: 'processing' })
     loadStats()
-    loadPage(page, statusFilter, dateFrom, dateTo)
+    loadPage(page, dateFrom, dateTo)
   }
 
   async function cancelOrder(id) {
     if (!confirm('確定要取消此筆訂單嗎？取消後無法復原。')) return
     await updateDoc(doc(db, 'orders', id), { status: 'cancelled' })
     loadStats()
-    loadPage(page, statusFilter, dateFrom, dateTo)
+    loadPage(page, dateFrom, dateTo)
   }
 
   function refresh() {
     cursorsRef.current = [null]
+    isFirstRender.current = true
     setPage(1)
-    prevPageRef.current = 1
     loadStats()
-    loadPage(1, statusFilter, dateFrom, dateTo)
+    loadPage(1, dateFrom, dateTo)
   }
 
   function clearFilters() {
+    setSearch('')
     setDateFrom('')
     setDateTo('')
     setStatusFilter('all')
-    // filter useEffect will trigger a fresh load
   }
 
-  // ── Excel export (current page only) ────────────────────────────────────
+  function goToPage(p) {
+    if (p < 1 || p > totalPages || p === page || spinning) return
+    if (p > 1 && !cursorsRef.current[p - 1]) return   // cursor not cached yet
+    setPage(p)
+  }
+
   function exportExcel() {
     const BOM     = '\uFEFF'
     const headers = ['訂單號', '客戶姓名', '品項', '金額', '後五碼', '狀態', '訂購日期']
-    const rows    = orders.map(o => [
+    const rows    = displayed.map(o => [
       o.orderNumber  || '',
       o.customerName || '',
       o.items        || '',
@@ -213,26 +228,16 @@ export default function AdminDashboard() {
     URL.revokeObjectURL(url)
   }
 
-  // ── Page navigation ───────────────────────────────────────────────────────
-  function goToPage(p) {
-    if (p < 1 || p > totalPages || p === page || spinning) return
-    // Can only jump to pages whose cursor is already cached (or page 1)
-    if (p > 1 && !cursorsRef.current[p - 1]) return
-    prevPageRef.current = page
-    setPage(p)
-  }
-
   if (!authed) return <LoginPage onLogin={() => setAuthed(true)} />
 
-  // Search is local within the current page's results
-  const displayed = search
-    ? orders.filter(o =>
-        (o.customerName || '').includes(search) ||
-        (o.orderNumber  || '').includes(search)
-      )
-    : orders
+  // ── Client-side filtering (status + search) applied on current page ───────
+  const displayed = orders.filter(o => {
+    if (statusFilter !== 'all' && o.status !== statusFilter) return false
+    if (search && !(o.customerName || '').includes(search) && !(o.orderNumber || '').includes(search)) return false
+    return true
+  })
 
-  const startItem = (page - 1) * PAGE_SIZE + 1
+  const startItem = totalCount > 0 ? (page - 1) * PAGE_SIZE + 1 : 0
   const endItem   = Math.min(page * PAGE_SIZE, totalCount)
 
   return (
@@ -281,7 +286,7 @@ export default function AdminDashboard() {
           <input
             className="ad-search"
             type="text"
-            placeholder="🔍 搜尋（當前頁）"
+            placeholder="🔍 搜尋客戶姓名或訂單號..."
             value={search}
             onChange={e => setSearch(e.target.value)}
           />
@@ -304,13 +309,11 @@ export default function AdminDashboard() {
             <option value="cancelled">已取消</option>
           </select>
 
-          {(dateFrom || dateTo || statusFilter !== 'all') && (
+          {(dateFrom || dateTo || statusFilter !== 'all' || search) && (
             <button className="ad-clear-btn" onClick={clearFilters}>✕ 清除篩選</button>
           )}
 
-          <button className="ad-export-btn" onClick={exportExcel} title="匯出當前頁">
-            ↓ 匯出 Excel
-          </button>
+          <button className="ad-export-btn" onClick={exportExcel}>↓ 匯出 Excel</button>
         </div>
 
         {/* Result info */}
@@ -318,6 +321,7 @@ export default function AdminDashboard() {
           {totalCount > 0
             ? `第 ${startItem}–${endItem} 筆，共 ${totalCount} 筆`
             : '查無符合條件的訂單'}
+          {statusFilter !== 'all' && ` · 顯示 ${displayed.length} 筆${STATUS[statusFilter]?.label ?? ''}`}
         </div>
 
         {/* Table */}
@@ -384,7 +388,9 @@ export default function AdminDashboard() {
                   <tr>
                     <td colSpan={8}>
                       <div className="ad-empty">
-                        {search ? `找不到「${search}」` : '查無符合條件的訂單'}
+                        {search || statusFilter !== 'all'
+                          ? '目前頁面沒有符合條件的訂單，請翻頁查看'
+                          : '查無訂單'}
                       </div>
                     </td>
                   </tr>
@@ -397,11 +403,8 @@ export default function AdminDashboard() {
         {/* Pagination */}
         {totalPages > 1 && (
           <div className="ad-pagination">
-            <button
-              className="ad-page-arrow"
-              disabled={page === 1 || spinning}
-              onClick={() => goToPage(page - 1)}
-            >
+            <button className="ad-page-arrow" disabled={page === 1 || spinning}
+              onClick={() => goToPage(page - 1)}>
               ‹ 上一頁
             </button>
 
@@ -409,30 +412,23 @@ export default function AdminDashboard() {
               {Array.from({ length: totalPages }, (_, i) => i + 1).map(p => {
                 const hasCursor = p === 1 || !!cursorsRef.current[p - 1]
                 return (
-                  <button
-                    key={p}
+                  <button key={p}
                     className={`ad-page-num ${p === page ? 'active' : ''}`}
                     disabled={spinning || !hasCursor || p === page}
                     onClick={() => goToPage(p)}
-                    title={!hasCursor ? '請依序翻頁' : ''}
-                  >
+                    title={!hasCursor ? '請依序翻頁' : `第 ${p} 頁`}>
                     {p}
                   </button>
                 )
               })}
             </div>
 
-            <button
-              className="ad-page-arrow"
-              disabled={page >= totalPages || spinning}
-              onClick={() => goToPage(page + 1)}
-            >
+            <button className="ad-page-arrow" disabled={page >= totalPages || spinning}
+              onClick={() => goToPage(page + 1)}>
               下一頁 ›
             </button>
 
-            <span className="ad-page-info">
-              第 {page} / {totalPages} 頁
-            </span>
+            <span className="ad-page-info">第 {page} / {totalPages} 頁</span>
           </div>
         )}
       </div>
