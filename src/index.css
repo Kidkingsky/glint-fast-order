@@ -663,6 +663,7 @@ body {
 .ad-badge.pending { background: rgba(100,100,120,0.08); color: var(--text-dim); border: 1px solid #ddd; }
 .ad-badge.confirm { background: rgba(230,126,0,0.09);   color: var(--warning);  border: 1px solid rgba(230,126,0,0.3); }
 .ad-badge.process { background: rgba(0,168,84,0.09);    color: var(--success);  border: 1px solid rgba(0,168,84,0.3); }
+.ad-badge.cancel  { background: rgba(150,150,150,0.08); color: #aaa;            border: 1px solid #e0e0e0; text-decoration: line-through; }
 .ad-badge-dot { width: 5px; height: 5px; border-radius: 50%; background: currentColor; }
 
 /* CONFIRM BTN */
@@ -679,6 +680,20 @@ body {
   white-space: nowrap;
 }
 .ad-confirm-btn:hover { background: rgba(0,168,84,0.16); }
+
+.ad-cancel-btn {
+  padding: 6px 14px;
+  background: rgba(232,0,90,0.06);
+  border: 1px solid rgba(232,0,90,0.3);
+  border-radius: 6px;
+  color: var(--pink);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+  white-space: nowrap;
+}
+.ad-cancel-btn:hover { background: rgba(232,0,90,0.13); }
 
 .ad-empty {
   text-align: center;

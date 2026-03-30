@@ -9,6 +9,7 @@ const STATUS = {
   pending_payment: { label: '待匯款', cls: 'pending' },
   confirming:      { label: '確認中', cls: 'confirm' },
   processing:      { label: '製作中', cls: 'process' },
+  cancelled:       { label: '已取消', cls: 'cancel'  },
 }
 
 function formatDate(ts) {
@@ -99,6 +100,12 @@ export default function AdminDashboard() {
   async function confirmOrder(id) {
     if (!confirm('確定要確認此筆入帳嗎？')) return
     await updateDoc(doc(db, 'orders', id), { status: 'processing' })
+    loadOrders()
+  }
+
+  async function cancelOrder(id) {
+    if (!confirm('確定要取消此筆訂單嗎？取消後無法復原。')) return
+    await updateDoc(doc(db, 'orders', id), { status: 'cancelled' })
     loadOrders()
   }
 
@@ -308,13 +315,21 @@ export default function AdminDashboard() {
                         <span className="ad-date">{formatDate(order.createdAt)}</span>
                       </td>
                       <td>
-                        {order.status === 'confirming' ? (
-                          <button className="ad-confirm-btn" onClick={() => confirmOrder(order.id)}>
-                            ✓ 確認入帳
-                          </button>
-                        ) : (
-                          <span style={{ color: '#ccc', fontSize: 12 }}>—</span>
-                        )}
+                        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                          {order.status === 'confirming' && (
+                            <button className="ad-confirm-btn" onClick={() => confirmOrder(order.id)}>
+                              ✓ 確認入帳
+                            </button>
+                          )}
+                          {order.status === 'pending_payment' && (
+                            <button className="ad-cancel-btn" onClick={() => cancelOrder(order.id)}>
+                              ✕ 取消訂單
+                            </button>
+                          )}
+                          {order.status !== 'confirming' && order.status !== 'pending_payment' && (
+                            <span style={{ color: '#ccc', fontSize: 12 }}>—</span>
+                          )}
+                        </div>
                       </td>
                     </tr>
                   )
