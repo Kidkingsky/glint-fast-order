@@ -2,29 +2,43 @@
  * POST /api/createOrder
  *
  * Body (JSON):
+ *   channel       string  必填 - 來源管道 (e.g. "Line", "FB", "官網")
  *   customerName  string  必填 - 客戶姓名
  *   items         string  必填 - 品項描述
+ *   orderDate     string  必填 - 訂購日期 "YYYY/MM/DD"
  *   totalAmount   number  必填 - 訂單金額
- *   phone         string  選填 - 聯絡電話
- *   notes         string  選填 - 備註
  *
  * Response 201:
  *   { success: true, orderId: string, orderNumber: string }
+ *
+ * Firestore document structure:
+ *   orderNumber   string     GF-YYYYMMDD-XXX (自動產生)
+ *   channel       string
+ *   customerName  string
+ *   items         string
+ *   orderDate     string     "YYYY/MM/DD"
+ *   totalAmount   integer
+ *   bankLastFive  string     "" (初始空白)
+ *   status        string     "pending_payment"
+ *   createdAt     timestamp
+ *   lastUpdated   timestamp
  */
 
 const PROJECT_ID = process.env.FIREBASE_PROJECT_ID || 'wd-fa-2a4d7'
 const API_KEY    = process.env.FIREBASE_API_KEY    || 'AIzaSyDD7prLAsXzGk6QaapylDRXF5ef7Oo12Mg'
 const BASE       = `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/(default)/documents`
 
-function generateOrderNumber() {
-  const now  = new Date()
-  const date = now.toISOString().slice(0, 10).replace(/-/g, '')       // e.g. 20260330
-  const rand = String(Math.floor(Math.random() * 9000) + 1000)        // 4-digit random
-  return `ORD-${date}-${rand}`
+/** 產生訂單號：GF-YYYYMMDD-XXX (3位隨機數 100-999) */
+function generateOrderNumber(orderDate) {
+  // 從 orderDate "YYYY/MM/DD" 取日期部分，移除斜線
+  const datePart = orderDate
+    ? orderDate.replace(/\//g, '')          // "20260328"
+    : new Date().toISOString().slice(0, 10).replace(/-/g, '')
+  const rand = String(Math.floor(Math.random() * 900) + 100)  // 100–999
+  return `GF-${datePart}-${rand}`
 }
 
 export default async function handler(req, res) {
-  // CORS headers (optional: tighten origin in production)
   res.setHeader('Access-Control-Allow-Origin', '*')
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS')
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type')
@@ -32,32 +46,40 @@ export default async function handler(req, res) {
   if (req.method === 'OPTIONS') return res.status(204).end()
   if (req.method !== 'POST')   return res.status(405).json({ error: 'Method not allowed' })
 
-  const { customerName, items, totalAmount, phone = '', notes = '' } = req.body ?? {}
+  const { channel, customerName, items, orderDate, totalAmount } = req.body ?? {}
 
+  // ── 驗證必填欄位 ──────────────────────────────
+  if (!channel || typeof channel !== 'string' || !channel.trim()) {
+    return res.status(400).json({ error: '缺少必填欄位: channel' })
+  }
   if (!customerName || typeof customerName !== 'string' || !customerName.trim()) {
     return res.status(400).json({ error: '缺少必填欄位: customerName' })
   }
   if (!items || typeof items !== 'string' || !items.trim()) {
     return res.status(400).json({ error: '缺少必填欄位: items' })
   }
+  if (!orderDate || typeof orderDate !== 'string' || !/^\d{4}\/\d{2}\/\d{2}$/.test(orderDate.trim())) {
+    return res.status(400).json({ error: '缺少必填欄位: orderDate，格式需為 YYYY/MM/DD' })
+  }
   if (totalAmount == null || isNaN(Number(totalAmount)) || Number(totalAmount) < 0) {
     return res.status(400).json({ error: '缺少必填欄位: totalAmount (需為非負數)' })
   }
 
-  const orderNumber = generateOrderNumber()
-  const createdAt   = new Date().toISOString()
+  const now         = new Date().toISOString()
+  const orderNumber = generateOrderNumber(orderDate.trim())
 
   const firestoreDoc = {
     fields: {
       orderNumber:  { stringValue: orderNumber },
+      channel:      { stringValue: channel.trim() },
       customerName: { stringValue: customerName.trim() },
       items:        { stringValue: items.trim() },
+      orderDate:    { stringValue: orderDate.trim() },
       totalAmount:  { integerValue: String(Math.round(Number(totalAmount))) },
-      phone:        { stringValue: String(phone).trim() },
-      notes:        { stringValue: String(notes).trim() },
       bankLastFive: { stringValue: '' },
       status:       { stringValue: 'pending_payment' },
-      createdAt:    { timestampValue: createdAt },
+      createdAt:    { timestampValue: now },
+      lastUpdated:  { timestampValue: now },
     },
   }
 
