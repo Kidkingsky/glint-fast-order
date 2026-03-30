@@ -11,6 +11,20 @@ const STATUS = {
   processing:      { label: '製作中', cls: 'process' },
 }
 
+function formatDate(ts) {
+  if (!ts) return '—'
+  const d = ts.toDate ? ts.toDate() : new Date(ts)
+  if (isNaN(d.getTime())) return '—'
+  return d.toLocaleDateString('zh-TW', { year: 'numeric', month: '2-digit', day: '2-digit' })
+}
+
+function toDateStr(ts) {
+  if (!ts) return ''
+  const d = ts.toDate ? ts.toDate() : new Date(ts)
+  if (isNaN(d.getTime())) return ''
+  return d.toISOString().slice(0, 10)
+}
+
 /* ── Login Gate ── */
 function LoginPage({ onLogin }) {
   const [user, setUser]   = useState('')
@@ -62,11 +76,14 @@ function LoginPage({ onLogin }) {
 
 /* ── Dashboard ── */
 export default function AdminDashboard() {
-  const [authed, setAuthed]     = useState(false)
-  const [orders, setOrders]     = useState([])
-  const [search, setSearch]     = useState('')
-  const [loading, setLoading]   = useState(true)
-  const [spinning, setSpinning] = useState(false)
+  const [authed, setAuthed]             = useState(false)
+  const [orders, setOrders]             = useState([])
+  const [search, setSearch]             = useState('')
+  const [loading, setLoading]           = useState(true)
+  const [spinning, setSpinning]         = useState(false)
+  const [dateFrom, setDateFrom]         = useState('')
+  const [dateTo, setDateTo]             = useState('')
+  const [statusFilter, setStatusFilter] = useState('all')
 
   const loadOrders = useCallback(async () => {
     setSpinning(true)
@@ -87,10 +104,21 @@ export default function AdminDashboard() {
 
   if (!authed) return <LoginPage onLogin={() => setAuthed(true)} />
 
-  const filtered = orders.filter(o =>
-    (o.customerName || '').includes(search) ||
-    (o.orderNumber  || '').includes(search)
-  )
+  const filtered = orders.filter(o => {
+    const matchSearch = (o.customerName || '').includes(search) || (o.orderNumber || '').includes(search)
+    const matchStatus = statusFilter === 'all' || o.status === statusFilter
+    let matchDate = true
+    if (dateFrom || dateTo) {
+      const ds = toDateStr(o.createdAt)
+      if (!ds) {
+        matchDate = false
+      } else {
+        if (dateFrom && ds < dateFrom) matchDate = false
+        if (dateTo   && ds > dateTo)   matchDate = false
+      }
+    }
+    return matchSearch && matchStatus && matchDate
+  })
 
   const stats = {
     total:      orders.length,
@@ -101,6 +129,30 @@ export default function AdminDashboard() {
   const totalRevenue = orders
     .filter(o => o.status === 'processing')
     .reduce((acc, o) => acc + (Number(o.totalAmount) || 0), 0)
+
+  function exportExcel() {
+    const BOM = '\uFEFF'
+    const headers = ['訂單號', '客戶姓名', '品項', '金額', '後五碼', '狀態', '訂購日期']
+    const rows = filtered.map(o => [
+      o.orderNumber  || '',
+      o.customerName || '',
+      o.items        || '',
+      o.totalAmount  || 0,
+      o.bankLastFive || '',
+      STATUS[o.status]?.label || o.status || '',
+      formatDate(o.createdAt),
+    ])
+    const csv = BOM + [headers, ...rows]
+      .map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(','))
+      .join('\n')
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
+    const url  = URL.createObjectURL(blob)
+    const a    = document.createElement('a')
+    a.href     = url
+    a.download = `orders_${new Date().toISOString().slice(0, 10)}.csv`
+    a.click()
+    URL.revokeObjectURL(url)
+  }
 
   return (
     <div className="ad-page">
@@ -143,7 +195,7 @@ export default function AdminDashboard() {
           已確認總收入：<span>NT$ {totalRevenue.toLocaleString()}</span>
         </div>
 
-        {/* Search */}
+        {/* Toolbar */}
         <div className="ad-toolbar">
           <input
             className="ad-search"
@@ -152,6 +204,50 @@ export default function AdminDashboard() {
             value={search}
             onChange={e => setSearch(e.target.value)}
           />
+
+          <div className="ad-filter-group">
+            <span className="ad-filter-label">日期</span>
+            <input
+              className="ad-date-input"
+              type="date"
+              value={dateFrom}
+              onChange={e => setDateFrom(e.target.value)}
+              title="起始日期"
+            />
+            <span className="ad-filter-sep">–</span>
+            <input
+              className="ad-date-input"
+              type="date"
+              value={dateTo}
+              onChange={e => setDateTo(e.target.value)}
+              title="結束日期"
+            />
+          </div>
+
+          <select
+            className="ad-status-select"
+            value={statusFilter}
+            onChange={e => setStatusFilter(e.target.value)}
+          >
+            <option value="all">全部狀態</option>
+            <option value="pending_payment">待匯款</option>
+            <option value="confirming">確認中</option>
+            <option value="processing">製作中</option>
+          </select>
+
+          {(dateFrom || dateTo || statusFilter !== 'all') && (
+            <button
+              className="ad-clear-btn"
+              onClick={() => { setDateFrom(''); setDateTo(''); setStatusFilter('all') }}
+            >
+              ✕ 清除篩選
+            </button>
+          )}
+
+          <button className="ad-export-btn" onClick={exportExcel} title="匯出目前篩選結果">
+            ↓ 匯出 Excel
+          </button>
+
           <button
             className="ad-refresh-btn"
             onClick={loadOrders}
@@ -161,6 +257,11 @@ export default function AdminDashboard() {
             <span style={{ display: 'inline-block', transition: 'transform 0.6s', transform: spinning ? 'rotate(360deg)' : 'rotate(0deg)' }}>↻</span>
             &nbsp;{spinning ? '更新中...' : '重新整理'}
           </button>
+        </div>
+
+        {/* Result count */}
+        <div className="ad-result-count">
+          顯示 {filtered.length} / {orders.length} 筆訂單
         </div>
 
         {/* Table */}
@@ -177,6 +278,7 @@ export default function AdminDashboard() {
                   <th>金額</th>
                   <th>後五碼</th>
                   <th>狀態</th>
+                  <th>訂購日期</th>
                   <th>操作</th>
                 </tr>
               </thead>
@@ -203,6 +305,9 @@ export default function AdminDashboard() {
                         </span>
                       </td>
                       <td>
+                        <span className="ad-date">{formatDate(order.createdAt)}</span>
+                      </td>
+                      <td>
                         {order.status === 'confirming' ? (
                           <button className="ad-confirm-btn" onClick={() => confirmOrder(order.id)}>
                             ✓ 確認入帳
@@ -216,9 +321,9 @@ export default function AdminDashboard() {
                 })}
                 {filtered.length === 0 && (
                   <tr>
-                    <td colSpan={7}>
+                    <td colSpan={8}>
                       <div className="ad-empty">
-                        {search ? `找不到「${search}」的相關訂單` : '尚無訂單資料'}
+                        {search ? `找不到「${search}」的相關訂單` : '查無符合條件的訂單'}
                       </div>
                     </td>
                   </tr>
