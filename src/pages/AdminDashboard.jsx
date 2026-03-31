@@ -354,7 +354,14 @@ export default function AdminDashboard() {
                   return (
                     <tr key={order.id}>
                       <td><span className="ad-order-num">{order.orderNumber}</span></td>
-                      <td>{order.customerName}</td>
+                      <td>
+                        {order.customerName}
+                        {order.channel && (
+                          <span style={{ marginLeft: 5, fontSize: 11, color: 'var(--text-dim)', fontWeight: 500 }}>
+                            ({order.channel})
+                          </span>
+                        )}
+                      </td>
                       <td style={{ maxWidth: 160, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                         {order.items}
                       </td>
