@@ -14,7 +14,7 @@ const STATUS_MAP = {
   processing:      { label: '製作中', cls: 'processing', icon: '◆' },
 }
 
-const SEVEN_ELEVEN_URL = 'https://emap.pcsc.com.tw/ecmap/default.aspx'
+const SEVEN_ELEVEN_URL = 'https://emap.pcsc.com.tw/'
 
 export default function OrderTracking() {
   const [order, setOrder]               = useState(null)
