@@ -14,13 +14,21 @@ const STATUS_MAP = {
   processing:      { label: '製作中', cls: 'processing', icon: '◆' },
 }
 
-export default function OrderTracking() {
-  const [order, setOrder]       = useState(null)
-  const [loading, setLoading]   = useState(true)
-  const [error, setError]       = useState('')
-  const [lastFive, setLastFive] = useState('')
+const SEVEN_ELEVEN_URL = 'https://emap.pcsc.com.tw/EMapSDK.aspx'
 
-  const params = new URLSearchParams(window.location.search)
+export default function OrderTracking() {
+  const [order, setOrder]               = useState(null)
+  const [loading, setLoading]           = useState(true)
+  const [error, setError]               = useState('')
+  const [submitting, setSubmitting]     = useState(false)
+
+  // Payment form fields
+  const [lastFive, setLastFive]         = useState('')
+  const [recipientName, setRecipientName] = useState('')
+  const [phone, setPhone]               = useState('')
+  const [storeName, setStoreName]       = useState('')
+
+  const params  = new URLSearchParams(window.location.search)
   const orderId = params.get('orderId') || params.get('orderid') || params.get('orderID')
 
   useEffect(() => {
@@ -34,37 +42,55 @@ export default function OrderTracking() {
 
   async function loadOrder() {
     setLoading(true)
-    console.log('[OrderTracking] 查詢訂單 orderId:', orderId)
     try {
       const snap = await getDoc(doc(db, 'orders', orderId))
-      console.log('[OrderTracking] Firestore 回應 exists:', snap.exists())
       if (snap.exists()) {
-        console.log('[OrderTracking] 訂單資料:', snap.data())
         setOrder(snap.data())
       } else {
-        console.warn('[OrderTracking] 找不到此 orderId:', orderId)
         setError('找不到此訂單，請確認連結是否正確。')
       }
     } catch (err) {
-      console.error('[OrderTracking] Firestore 錯誤:', err.code, err.message)
       setError(`連線錯誤：${err.message}`)
     }
     setLoading(false)
   }
 
   async function submitPayment() {
-    if (lastFive.length !== 5) {
+    // Validation
+    if (lastFive.replace(/\D/g, '').length !== 5) {
       alert('請輸入正確的 5 位數字後五碼。')
+      return
+    }
+    if (!recipientName.trim()) {
+      alert('請輸入收件姓名。')
+      return
+    }
+    const phoneClean = phone.replace(/\D/g, '')
+    if (!/^09\d{8}$/.test(phoneClean)) {
+      alert('請輸入正確的手機號碼（格式：09xxxxxxxx）。')
+      return
+    }
+    if (!storeName.trim()) {
+      alert('請輸入 7-11 門市名稱。')
       return
     }
     if (!confirm('確定送出嗎？送出後將無法修改。')) return
 
-    await updateDoc(doc(db, 'orders', orderId), {
-      bankLastFive: lastFive,
-      status: 'confirming',
-      lastUpdated: serverTimestamp(),
-    })
-    loadOrder()
+    setSubmitting(true)
+    try {
+      await updateDoc(doc(db, 'orders', orderId), {
+        bankLastFive:  lastFive.replace(/\D/g, ''),
+        recipientName: recipientName.trim(),
+        phone:         phoneClean,
+        storeName:     storeName.trim(),
+        status:        'confirming',
+        lastUpdated:   serverTimestamp(),
+      })
+      loadOrder()
+    } catch (err) {
+      alert(`送出失敗：${err.message}`)
+    }
+    setSubmitting(false)
   }
 
   const currentStep = order ? STEPS.findIndex(s => s.key === order.status) : -1
@@ -74,7 +100,6 @@ export default function OrderTracking() {
     <div className="ot-page">
       {/* Logo */}
       <div className="ot-logo-wrap">
-        
         <img src="/logo-banner.png" className="ot-logo-banner" alt="老范四驅車工坊" />
         <div className="ot-brand">老范四驅車工坊</div>
         <div className="ot-subtitle">Order Tracking System</div>
@@ -84,7 +109,6 @@ export default function OrderTracking() {
       <div className="ot-card">
         <div className="ot-corner-bl" />
 
-        {/* Loading */}
         {loading && (
           <div className="ot-loading">
             <div className="ot-spinner" />
@@ -92,12 +116,10 @@ export default function OrderTracking() {
           </div>
         )}
 
-        {/* Error */}
         {error && !loading && (
           <div className="ot-error">{error}</div>
         )}
 
-        {/* Content */}
         {order && !loading && (
           <>
             {/* Step Progress */}
@@ -151,10 +173,13 @@ export default function OrderTracking() {
               </span>
             </div>
 
-            {/* Payment Section */}
+            {/* ── 待匯款：填寫完整收件 + 匯款資訊 ── */}
             {order.status === 'pending_payment' && (
               <div className="ot-payment">
-                <div className="ot-payment-label">匯款後回報銀行後五碼</div>
+                <div className="ot-payment-label">匯款 &amp; 收件資訊</div>
+
+                {/* 後五碼 */}
+                <label className="ot-field-label">銀行匯款後五碼</label>
                 <input
                   className="ot-input"
                   type="number"
@@ -163,21 +188,77 @@ export default function OrderTracking() {
                   placeholder="— — — — —"
                   maxLength={5}
                 />
-                <button className="ot-btn" onClick={submitPayment}>
-                  ▶ &nbsp; 送出並開始對帳
+
+                {/* 收件姓名 */}
+                <label className="ot-field-label">收件姓名</label>
+                <input
+                  className="ot-input ot-input-sm"
+                  type="text"
+                  value={recipientName}
+                  onChange={e => setRecipientName(e.target.value)}
+                  placeholder="請輸入收件人姓名"
+                />
+
+                {/* 手機號碼 */}
+                <label className="ot-field-label">聯絡手機號碼</label>
+                <input
+                  className="ot-input ot-input-sm"
+                  type="tel"
+                  value={phone}
+                  onChange={e => setPhone(e.target.value)}
+                  placeholder="09xxxxxxxx"
+                  maxLength={10}
+                />
+
+                {/* 7-11 門市 */}
+                <div className="ot-store-row">
+                  <label className="ot-field-label" style={{ marginBottom: 0 }}>7-11 門市名稱</label>
+                  <a
+                    className="ot-store-link"
+                    href={SEVEN_ELEVEN_URL}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    🔍 查詢門市
+                  </a>
+                </div>
+                <input
+                  className="ot-input ot-input-sm"
+                  type="text"
+                  value={storeName}
+                  onChange={e => setStoreName(e.target.value)}
+                  placeholder="請輸入門市名稱（例：台北信義店）"
+                />
+
+                <button className="ot-btn" onClick={submitPayment} disabled={submitting}>
+                  {submitting ? '送出中...' : '▶ \u00a0 送出並開始對帳'}
                 </button>
               </div>
             )}
 
+            {/* ── 確認中：顯示已填資訊 ── */}
             {order.status === 'confirming' && (
               <div className="ot-payment">
-                <div className="ot-payment-label">已回報後五碼</div>
-                <input
-                  className="ot-input"
-                  type="text"
-                  value={order.bankLastFive || ''}
-                  disabled
-                />
+                <div className="ot-payment-label">已回報資訊</div>
+
+                <label className="ot-field-label">銀行後五碼</label>
+                <input className="ot-input" type="text" value={order.bankLastFive || ''} disabled />
+
+                <div className="ot-confirmed-grid">
+                  <div className="ot-confirmed-item">
+                    <span className="ot-label">收件人</span>
+                    <span className="ot-value">{order.recipientName || '—'}</span>
+                  </div>
+                  <div className="ot-confirmed-item">
+                    <span className="ot-label">手機</span>
+                    <span className="ot-value">{order.phone || '—'}</span>
+                  </div>
+                  <div className="ot-confirmed-item" style={{ gridColumn: '1 / -1' }}>
+                    <span className="ot-label">取貨門市</span>
+                    <span className="ot-value">{order.storeName || '—'}</span>
+                  </div>
+                </div>
+
                 <div className="ot-success">
                   ✦ &nbsp; 已成功收到回報，正在為您核對款項！
                 </div>

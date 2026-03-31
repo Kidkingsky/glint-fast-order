@@ -206,13 +206,16 @@ export default function AdminDashboard() {
 
   function exportExcel() {
     const BOM     = '\uFEFF'
-    const headers = ['訂單號', '客戶姓名', '品項', '金額', '後五碼', '狀態', '訂購日期']
+    const headers = ['訂單號', '客戶姓名', '品項', '金額', '後五碼', '收件人', '手機', '取貨門市', '狀態', '訂購日期']
     const rows    = displayed.map(o => [
-      o.orderNumber  || '',
-      o.customerName || '',
-      o.items        || '',
-      o.totalAmount  || 0,
-      o.bankLastFive || '',
+      o.orderNumber   || '',
+      o.customerName  || '',
+      o.items         || '',
+      o.totalAmount   || 0,
+      o.bankLastFive  || '',
+      o.recipientName || '',
+      o.phone         || '',
+      o.storeName     || '',
       STATUS[o.status]?.label || o.status || '',
       formatDate(o.createdAt),
     ])
@@ -337,6 +340,9 @@ export default function AdminDashboard() {
                   <th>品項</th>
                   <th>金額</th>
                   <th>後五碼</th>
+                  <th>收件人</th>
+                  <th>手機</th>
+                  <th>取貨門市</th>
                   <th>狀態</th>
                   <th>訂購日期</th>
                   <th>操作</th>
@@ -349,7 +355,7 @@ export default function AdminDashboard() {
                     <tr key={order.id}>
                       <td><span className="ad-order-num">{order.orderNumber}</span></td>
                       <td>{order.customerName}</td>
-                      <td style={{ maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      <td style={{ maxWidth: 160, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                         {order.items}
                       </td>
                       <td><span className="ad-amount">NT$ {(order.totalAmount || 0).toLocaleString()}</span></td>
@@ -357,6 +363,11 @@ export default function AdminDashboard() {
                         {order.bankLastFive
                           ? <span className="ad-bank">{order.bankLastFive}</span>
                           : <span style={{ color: '#ccc' }}>—</span>}
+                      </td>
+                      <td>{order.recipientName || <span style={{ color: '#ccc' }}>—</span>}</td>
+                      <td style={{ whiteSpace: 'nowrap' }}>{order.phone || <span style={{ color: '#ccc' }}>—</span>}</td>
+                      <td style={{ maxWidth: 120, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {order.storeName || <span style={{ color: '#ccc' }}>—</span>}
                       </td>
                       <td>
                         <span className={`ad-badge ${s.cls}`}>
@@ -386,7 +397,7 @@ export default function AdminDashboard() {
                 })}
                 {displayed.length === 0 && !loading && (
                   <tr>
-                    <td colSpan={8}>
+                    <td colSpan={11}>
                       <div className="ad-empty">
                         {search || statusFilter !== 'all'
                           ? '目前頁面沒有符合條件的訂單，請翻頁查看'
