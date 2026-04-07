@@ -10,10 +10,11 @@ const ADMIN_PASS = '12341234'
 const PAGE_SIZE  = 10
 
 const STATUS = {
-  pending_payment: { label: '待匯款', cls: 'pending' },
-  confirming:      { label: '確認中', cls: 'confirm' },
-  processing:      { label: '製作中', cls: 'process' },
-  cancelled:       { label: '已取消', cls: 'cancel'  },
+  pending_payment: { label: '待匯款', cls: 'pending'   },
+  confirming:      { label: '確認中', cls: 'confirm'   },
+  processing:      { label: '製作中', cls: 'process'   },
+  completed:       { label: '已完成', cls: 'complete'  },
+  cancelled:       { label: '已取消', cls: 'cancel'    },
 }
 
 function formatDate(ts) {
@@ -81,7 +82,7 @@ export default function AdminDashboard() {
   const cursorsRef = useRef([null])
 
   // Global stats (all-time, independent of filters)
-  const [stats, setStats]               = useState({ total: 0, pending: 0, confirming: 0, processing: 0 })
+  const [stats, setStats]               = useState({ total: 0, pending: 0, confirming: 0, processing: 0, completed: 0 })
   const [totalRevenue, setTotalRevenue] = useState(0)
 
   const totalPages = Math.max(1, Math.ceil(totalCount / PAGE_SIZE))
@@ -100,11 +101,12 @@ export default function AdminDashboard() {
   // ── Load global stats ─────────────────────────────────────────────────────
   const loadStats = useCallback(async () => {
     const col = collection(db, 'orders')
-    const [totalSnap, pendingSnap, confirmSnap, processSnap, revSnap] = await Promise.all([
+    const [totalSnap, pendingSnap, confirmSnap, processSnap, completedSnap, revSnap] = await Promise.all([
       getCountFromServer(query(col)),
       getCountFromServer(query(col, where('status', '==', 'pending_payment'))),
       getCountFromServer(query(col, where('status', '==', 'confirming'))),
       getCountFromServer(query(col, where('status', '==', 'processing'))),
+      getCountFromServer(query(col, where('status', '==', 'completed'))),
       getDocs(query(col, where('status', '==', 'processing'))),
     ])
     setStats({
@@ -112,6 +114,7 @@ export default function AdminDashboard() {
       pending:    pendingSnap.data().count,
       confirming: confirmSnap.data().count,
       processing: processSnap.data().count,
+      completed:  completedSnap.data().count,
     })
     setTotalRevenue(
       revSnap.docs.reduce((acc, d) => acc + (Number(d.data().totalAmount) || 0), 0)
@@ -172,6 +175,13 @@ export default function AdminDashboard() {
   async function confirmOrder(id) {
     if (!confirm('確定要確認此筆入帳嗎？')) return
     await updateDoc(doc(db, 'orders', id), { status: 'processing' })
+    loadStats()
+    loadPage(page, dateFrom, dateTo)
+  }
+
+  async function completeOrder(id) {
+    if (!confirm('確定要將此訂單標記為已完成嗎？')) return
+    await updateDoc(doc(db, 'orders', id), { status: 'completed' })
     loadStats()
     loadPage(page, dateFrom, dateTo)
   }
@@ -277,6 +287,10 @@ export default function AdminDashboard() {
             <div className="ad-stat-num">{stats.processing}</div>
             <div className="ad-stat-label">製作中</div>
           </div>
+          <div className="ad-stat-card purple">
+            <div className="ad-stat-num">{stats.completed}</div>
+            <div className="ad-stat-label">已完成</div>
+          </div>
         </div>
 
         {/* Revenue */}
@@ -309,6 +323,7 @@ export default function AdminDashboard() {
             <option value="pending_payment">待匯款</option>
             <option value="confirming">確認中</option>
             <option value="processing">製作中</option>
+            <option value="completed">已完成</option>
             <option value="cancelled">已取消</option>
           </select>
 
@@ -394,7 +409,12 @@ export default function AdminDashboard() {
                               ✕ 取消訂單
                             </button>
                           )}
-                          {order.status !== 'confirming' && order.status !== 'pending_payment' && (
+                          {order.status === 'processing' && (
+                            <button className="ad-complete-btn" onClick={() => completeOrder(order.id)}>
+                              ✓ 已完成
+                            </button>
+                          )}
+                          {order.status !== 'confirming' && order.status !== 'pending_payment' && order.status !== 'processing' && (
                             <span style={{ color: '#ccc', fontSize: 12 }}>—</span>
                           )}
                         </div>

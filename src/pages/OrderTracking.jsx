@@ -6,12 +6,14 @@ const STEPS = [
   { key: 'pending_payment', label: '待匯款' },
   { key: 'confirming',      label: '確認中' },
   { key: 'processing',      label: '製作中' },
+  { key: 'completed',       label: '已完成' },
 ]
 
 const STATUS_MAP = {
   pending_payment: { label: '待匯款', cls: 'pending',    icon: '◈' },
   confirming:      { label: '確認中', cls: 'confirming', icon: '◉' },
   processing:      { label: '製作中', cls: 'processing', icon: '◆' },
+  completed:       { label: '已完成', cls: 'completed',  icon: '✦' },
 }
 
 const SEVEN_ELEVEN_URL = 'https://emap.pcsc.com.tw/'
@@ -233,6 +235,29 @@ export default function OrderTracking() {
                 <button className="ot-btn" onClick={submitPayment} disabled={submitting}>
                   {submitting ? '送出中...' : '▶ \u00a0 送出並開始對帳'}
                 </button>
+              </div>
+            )}
+
+            {/* ── 已完成 ── */}
+            {order.status === 'completed' && (
+              <div className="ot-payment">
+                <div className="ot-success ot-success-complete">
+                  ✦ &nbsp; 您的訂單已完成，感謝您的支持！
+                </div>
+                <div className="ot-confirmed-grid" style={{ marginTop: 14 }}>
+                  <div className="ot-confirmed-item">
+                    <span className="ot-label">收件人</span>
+                    <span className="ot-value">{order.recipientName || '—'}</span>
+                  </div>
+                  <div className="ot-confirmed-item">
+                    <span className="ot-label">手機</span>
+                    <span className="ot-value">{order.phone || '—'}</span>
+                  </div>
+                  <div className="ot-confirmed-item" style={{ gridColumn: '1 / -1' }}>
+                    <span className="ot-label">取貨門市</span>
+                    <span className="ot-value">{order.storeName || '—'}</span>
+                  </div>
+                </div>
               </div>
             )}
 
